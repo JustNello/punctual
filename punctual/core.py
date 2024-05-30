@@ -2,6 +2,8 @@ import re
 
 from datetime import datetime, timedelta
 from typing import List
+from typing import Tuple
+from typing import LiteralString
 
 from tabulate import tabulate
 
@@ -50,7 +52,20 @@ def get_synonym_duration(entry: str, synonyms: dict) -> int:
     return synonyms[key]['duration']
 
 
-def get_duration(entry: str) -> int:
+def get_duration(entry: str, synonyms: dict) -> int:
+    # always do an attempt to get duration from entries such as:
+    # "1h33m", "30m", "2h"
+    entry_duration_minutes = parse_duration(entry)
+
+    # entry is in the form of a synonym, such as:
+    # "Rome -> Paris", "Shower"
+    if entry_duration_minutes == 0 and is_synonym(entry, synonyms):
+        entry_duration_minutes = get_synonym_duration(entry, synonyms)
+
+    return entry_duration_minutes
+
+
+def parse_duration(entry: str) -> int:
     """
     Convert a duration string like '1h30m', '1h', or '23m' into the total number of minutes as an integer.
 
@@ -156,6 +171,10 @@ def punctual(entries: List[str],
              usr_synonyms: List[tuple],
              usr_start_time: datetime = None,
              contingency_in_minutes: int = 2) -> dict:
+    # CHECK
+    if len(entries) == 0:
+        raise ValueError('Expected at least one entry')
+
     # INIT
     start_time = usr_start_time if usr_start_time else datetime.now()
 
@@ -166,40 +185,46 @@ def punctual(entries: List[str],
         add_synonym_duration(usr_synonym[0], synonyms, usr_synonym[1])
 
     # PROCESSING
+
+    # adjust the start_time if the first entry starts on a fixed time
+    if parse_entry(entries[0], start_time)[1]:
+        start_time = parse_entry(entries[0], start_time)[1]
+
+    # an entry is a string in either following formats:
+    # <duration | synonym>; <start_time>
+    # duration and label are mandatory
+    # start_time is optional
+    # the user shall specify either duration or label
+    # a duration is expressed as hours and minutes, such as: 1h32m, 2h and 25m
+    # a synonym is a string that references a duration specified in the "synonyms" dictionary
+    entries_parsed: List[Tuple[LiteralString, datetime]] = \
+        [parse_entry(entry, start_time) for entry in entries]
+
+    # base duration plus the contingency, applied to every entry
+    entries_duration: List[int] = \
+        [get_duration(entry, synonyms) + contingency_in_minutes for entry, at in entries_parsed]
+
+    # TODO refactor below
+
     entry_duration_minutes = 0
     result = {
         'entries': [],
         'total_duration_minutes': 0,
         # adjusted later
-        'start_time': None,
+        'start_time': start_time,
         'end_time': None
     }
     # count the number of spare times added
     spares = 0
+
+    # TODO end refactor above
+
     for i in range(len(entries)):
-        e, at = parse_entry(entries[i], start_time)
+        e, at = entries_parsed[i]
+        entry_duration_minutes = entries_duration[i]
 
-        # adjust the start_time if the first entry starts on a fixed time
-        if i == 0 and at:
-            start_time = at
-        result['start_time'] = start_time
-
-        # always do an attempt to get duration from entries such as:
-        # "1h33m", "30m", "2h"
-        entry_duration_minutes = get_duration(e)
-
-        # entry is in the form of a synonym, such as:
-        # "Rome -> Paris", "Shower"
-        if entry_duration_minutes == 0 and is_synonym(e, synonyms):
-            entry_duration_minutes = get_synonym_duration(e, synonyms)
-
-        # add contingency
-        entry_duration_minutes = entry_duration_minutes + contingency_in_minutes
-
-        # build user output
-
+        # TODO continue from here
         def actual_start_time() -> datetime:
-            #start_time if i == 0 else result['entries'][i - 1]['end_time']
             if i == 0:
                 return start_time
             if at:
