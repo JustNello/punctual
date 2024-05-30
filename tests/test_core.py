@@ -72,13 +72,13 @@ def test_standard_usage():
     assert prettify_report(result) == ('\n'
                                        'Total time required: 285 minutes\n'
                                        'From 13:29 to 18:14\n'
-                                       'entry                     duration  start_time    end_time    overlap\n'
+                                       'entry                     duration  start_time    end_time      overlap\n'
                                        '----------------------  ----------  ------------  ----------  ---------\n'
-                                       'Shower                          22  13:29         13:51       False\n'
-                                       'Eating                          12  13:51         14:03       False\n'
-                                       'Plaza -> movie theater          52  14:03         14:55       False\n'
-                                       '145m                           147  14:55         17:22       False\n'
-                                       'Movie theater -> plaza          52  17:22         18:14       False\n')
+                                       'Shower                          22  13:29         13:51               0\n'
+                                       'Eating                          12  13:51         14:03               0\n'
+                                       'Plaza -> movie theater          52  14:03         14:55               0\n'
+                                       '145m                           147  14:55         17:22               0\n'
+                                       'Movie theater -> plaza          52  17:22         18:14               0\n')
 
 
 def test_detect_spare_time_in_the_middle_of_two_entries():
@@ -103,12 +103,12 @@ def test_detect_spare_time_in_the_middle_of_two_entries():
     assert prettify_report(result) == ('\n'
                                        'Total time required: 75 minutes\n'
                                        'From 13:29 to 14:44\n'
-                                       'entry         duration  start_time    end_time    overlap\n'
+                                       'entry         duration  start_time    end_time      overlap\n'
                                        '----------  ----------  ------------  ----------  ---------\n'
-                                       'Shower              22  13:29         13:51       False\n'
-                                       'SPARE TIME           9  13:51         14:00       False\n'
-                                       '30m                 32  14:00         14:32       False\n'
-                                       'Snack               12  14:32         14:44       False\n')
+                                       'Shower              22  13:29         13:51               0\n'
+                                       'SPARE TIME           9  13:51         14:00               0\n'
+                                       '30m                 32  14:00         14:32               0\n'
+                                       'Snack               12  14:32         14:44               0\n')
 
 
 def test_detect_spare_time_on_the_first_entry():
@@ -133,11 +133,11 @@ def test_detect_spare_time_on_the_first_entry():
     assert prettify_report(result) == ('\n'
                                        'Total time required: 66 minutes\n'
                                        'From 14:00 to 15:06\n'
-                                       'entry      duration  start_time    end_time    overlap\n'
+                                       'entry      duration  start_time    end_time      overlap\n'
                                        '-------  ----------  ------------  ----------  ---------\n'
-                                       'Shower           22  14:00         14:22       False\n'
-                                       '30m              32  14:22         14:54       False\n'
-                                       'Snack            12  14:54         15:06       False\n')
+                                       'Shower           22  14:00         14:22               0\n'
+                                       '30m              32  14:22         14:54               0\n'
+                                       'Snack            12  14:54         15:06               0\n')
 
 
 def test_detect_spare_time_on_the_last_entry():
@@ -162,9 +162,38 @@ def test_detect_spare_time_on_the_last_entry():
     assert prettify_report(result) == ('\n'
                                        'Total time required: 398 minutes\n'
                                        'From 13:29 to 16:05\n'
-                                       'entry                   duration  start_time    end_time    overlap\n'
+                                       'entry                   duration  start_time    end_time      overlap\n'
                                        '--------------------  ----------  ------------  ----------  ---------\n'
-                                       'Shower                        22  13:29         13:51       False\n'
-                                       '30m                           32  13:51         14:23       False\n'
-                                       'SPARE TIME                   242  14:23         18:25       False\n'
-                                       'Barcellona -> madrid         102  18:25         20:07       False\n')
+                                       'Shower                        22  13:29         13:51               0\n'
+                                       '30m                           32  13:51         14:23               0\n'
+                                       'SPARE TIME                   242  14:23         18:25               0\n'
+                                       'Barcellona -> madrid         102  18:25         20:07               0\n')
+
+
+def test_detect_entries_that_overlap():
+    # given
+    usr_entries = [
+        'shower',
+        '30m; 14:00',
+        'snack'
+    ]
+
+    usr_synonyms = [
+        ('shower', 20),
+        ('snack', 10)
+    ]
+
+    # when
+    result = punctual(entries=usr_entries,
+                      usr_synonyms=usr_synonyms,
+                      usr_start_time=datetime(2024, 5, 23, 13, 59, 0))
+
+    # then
+    assert prettify_report(result) == ('\n'
+                                       'Total time required: 66 minutes\n'
+                                       'From 13:59 to 15:05\n'
+                                       'entry      duration  start_time    end_time      overlap\n'
+                                       '-------  ----------  ------------  ----------  ---------\n'
+                                       'Shower           22  13:59         14:21               0\n'
+                                       '30m              32  14:00         14:53            1419\n'
+                                       'Snack            12  14:53         15:05               0\n')

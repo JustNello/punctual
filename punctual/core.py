@@ -144,8 +144,12 @@ def parse_entry(parsable_entry: str, start_time: datetime):
     return parsable_entry, None
 
 
+def is_overlap(previous: datetime, after: datetime) -> bool:
+    return previous > after
+
+
 def minutes_between_entries(previous: datetime, after: datetime) -> int:
-    return int((after - previous).seconds / 60)
+    return abs(int((after - previous).seconds / 60))
 
 
 def punctual(entries: List[str],
@@ -214,7 +218,7 @@ def punctual(entries: List[str],
                 # missing spare duration to the total is adjusted later
                 'end_time': actual_end_time(),
                 # adjusted later
-                'overlap': False,
+                'overlap': 0,
             }
 
         result['total_duration_minutes'] = result['total_duration_minutes'] + entry_duration_minutes
@@ -230,25 +234,29 @@ def punctual(entries: List[str],
                 previous=result['entries'][i - 1]['end_time'],
                 after=result['entries'][i]['start_time']
             )
+            entries_overlap = is_overlap(
+                previous=result['entries'][i - 1]['end_time'],
+                after=result['entries'][i]['start_time']
+            )
+            # oh no, there's an overlap: "I guess the user won't have time
+            # to comply with his plan"
+            if entries_overlap:
+                result['entries'][i]['overlap'] = minutes_between_prev_entry
             # spare time found: "The user may have time to prepare popcorn too"
-            if minutes_between_prev_entry > 0:
+            elif minutes_between_prev_entry > 0:
                 result['entries'].insert(i, {
                     'entry': 'SPARE TIME',
                     'duration': minutes_between_prev_entry,
                     'start_time': result['entries'][i - 1]['end_time'],
                     'end_time': result['entries'][i]['start_time'],
                     # can never overlap
-                    'overlap': False,
+                    'overlap': 0,
                 })
                 spares = spares + 1
                 # update the total
                 result['total_duration_minutes'] = result['total_duration_minutes'] + minutes_between_prev_entry
                 # adjust entry end time, now that total_duration_minutes includes the spare duration too
                 result['entries'][i + 1]['end_time'] = actual_end_time()
-            # oh no, there's an overlap: "I guess the user won't have time
-            # to comply with his plan"
-            elif minutes_between_prev_entry < 0:
-                result['entries'][i]['overlap'] = True
 
     return result
 
