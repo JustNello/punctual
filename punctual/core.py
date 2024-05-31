@@ -149,7 +149,7 @@ def is_overlap(previous: datetime, after: datetime) -> bool:
 
 
 def minutes_between_entries(previous: datetime, after: datetime) -> int:
-    return abs(int((after - previous).seconds / 60))
+    return int(abs(after - previous).seconds / 60)
 
 
 def punctual(entries: List[str],

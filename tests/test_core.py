@@ -195,5 +195,5 @@ def test_detect_entries_that_overlap():
                                        'entry      duration  start_time    end_time      overlap\n'
                                        '-------  ----------  ------------  ----------  ---------\n'
                                        'Shower           22  13:59         14:21               0\n'
-                                       '30m              32  14:00         14:53            1419\n'
+                                       '30m              32  14:00         14:53              21\n'
                                        'Snack            12  14:53         15:05               0\n')
