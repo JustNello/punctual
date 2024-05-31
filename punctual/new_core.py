@@ -3,10 +3,12 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Generic
 from typing import List
+from typing import Set
 from typing import NamedTuple
 from typing import Tuple
 from typing import TypeVar
 from typing import Union
+from enum import Enum
 
 from punctual.core import add_synonym_duration
 from punctual.core import prettify_report
@@ -44,16 +46,23 @@ class Entry(NamedTuple):
     start_time: datetime
     end_time: datetime
     duration: timedelta
+    fixed: bool
 
     @property
     def minutes(self) -> float:
         return self.duration.total_seconds() / 60
 
 
+class Feature(Enum):
+    DETECT_SPARE_TIME = 1
+    DETECT_OVERLAP = 2
+
+
 class Schedule:
 
-    def __init__(self):
+    def __init__(self, features: List[Feature] = None):
         self._entries: List[Entry] = []
+        self._features: Set[Entry] = set(features) if features else set()
 
     # CONSTRUCTORS
 
@@ -125,27 +134,81 @@ class Schedule:
     def end(self) -> datetime:
         return self.last.end_time
 
+    # TODO implement
+    @property
+    def _does_detect_overlap(self) -> bool:
+        return Feature.DETECT_OVERLAP in self._features
+
+    # TODO implement
+    @property
+    def _does_detect_spare_time(self) -> bool:
+        return Feature.DETECT_SPARE_TIME in self._features
+
     # PRIVATE METHODS
 
     def _raise_error_if_empty(self):
         if self.empty:
             raise IndexError("There are no entries")
 
-    def _start_end_time(self, duration: timedelta, start: datetime = None) -> Tuple[datetime, datetime]:
+    def _start_end_time(self, duration: timedelta, start: datetime = None, previous_entry_index: int = None) -> Tuple[
+        datetime, datetime]:
         # user may have provided a start time, that's why we check for
         # start if start else ...
         if self.empty:
             current = start if start else Schedule._now()
             return current, current + duration
-        return start if start else self.last.end_time, self.last.end_time + duration
+
+        # Allows the user to insert an entry at a specified index,
+        # otherwise defaults to last entry
+        previous_entry: Entry
+        if previous_entry_index is not None:
+            previous_entry = self._entries[previous_entry_index]
+        else:
+            previous_entry = self.last
+        return start if start else previous_entry.end_time, previous_entry.end_time + duration
+
+    def _make_entry(self, name: str, duration: timedelta, start: datetime = None,
+                    previous_entry_index: int = None) -> Entry:
+        start_time, end_time = self._start_end_time(
+            duration, start, previous_entry_index)
+        return Entry(name, start_time, end_time, duration, True if start else False)
+
+    def _propagate_time_changes(self, index: int):
+        already_up_to_date: List[Entry] = self._entries[:index]
+        to_be_updated: List[Entry] = self._entries[index:]
+        self._entries = already_up_to_date
+        for entry in to_be_updated:
+            # start_time of fixed entries must not change, even after updating and at the risk
+            # of overlapping
+            self.append(entry.name, entry.duration, entry.start_time if entry.fixed else None)
+
+    def _sort(self):
+        self._entries = sorted(self._entries, key=lambda entry: entry.start_time)
 
     # USER METHODS TO HANDLE ENTRIES
 
     def append(self, name: str, duration: timedelta, start: datetime = None) -> Entry:
-        start_time, end_time = self._start_end_time(duration, start)
-        result: Entry = Entry(name, start_time, end_time, duration)
+        result: Entry = self._make_entry(name, duration, start)
         self._entries.append(result)
+        self._sort()
         return result
+
+    def insert(self, index: int, name: str, duration: timedelta, start: datetime = None) -> Entry:
+        result: Entry = self._make_entry(name, duration, start, index - 1 if index > 0 else None)
+        self._entries.insert(index, result)
+        self._propagate_time_changes(index)
+        self._sort()
+        return result
+
+
+def punctual(entries: List[str],
+             usr_synonyms: List[Tuple[str, int]],
+             usr_start_time: datetime = None,
+             contingency_in_minutes: int = 2) -> Schedule:
+    return Schedule.from_entries(
+        *entries,
+        parser=StandardParser(synonyms=usr_synonyms, contingency=timedelta(minutes=contingency_in_minutes))
+    )
 
 
 if __name__ == '__main__':
@@ -155,8 +218,12 @@ if __name__ == '__main__':
     ]
 
     schedule: Schedule = Schedule.from_entries(
-        'shower; 14:00', '30m', 'snack',
+        '30m', 'shower; 14:00', 'snack',
         parser=StandardParser(synonyms=usr_synonyms, contingency=None)
     )
 
+    print(schedule)
+    print('\nAFTER\n')
+
+    schedule.insert(1, 'breakfast', timedelta(minutes=12))
     print(schedule)

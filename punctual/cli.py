@@ -1,7 +1,7 @@
 import argparse
-import ast
 
-from punctual import punctual, prettify_report
+from punctual.new_core import Schedule
+from punctual.new_core import punctual
 
 
 def parse_args():
@@ -63,10 +63,11 @@ def main():
     else:
         print("No synonyms provided.")
 
-    result = punctual(entries=read_lines_from_file(args.entries_file),
-                      usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [])
+    result: Schedule = punctual(
+        entries=read_lines_from_file(args.entries_file),
+        usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [])
 
-    print(prettify_report(result))
+    print(result)
 
 
 if __name__ == "__main__":
