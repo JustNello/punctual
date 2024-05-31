@@ -1,7 +1,11 @@
 import argparse
+import time
+
+from time import sleep
 
 from punctual.new_core import Schedule
 from punctual.new_core import punctual
+
 
 
 def parse_args():
@@ -19,6 +23,13 @@ def parse_args():
         '--synonyms_file',
         type=str,
         help='Path to the synonyms file'
+    )
+
+    # Enable loop option
+    parser.add_argument(
+        '--live',
+        action=argparse.BooleanOptionalAction,
+        help='The program will continue running until the user shuts it down'
     )
 
     args = parser.parse_args()
@@ -58,16 +69,25 @@ def main():
 
     print(f"Entries file path: {args.entries_file}")
 
+    if args.live:
+        print('Schedule will be generated every minute until user shuts the program down')
+
     if args.synonyms_file:
         print(f"Synonyms file path: {args.synonyms_file}")
     else:
         print("No synonyms provided.")
 
-    result: Schedule = punctual(
-        entries=read_lines_from_file(args.entries_file),
-        usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [])
+    while True:
+        result: Schedule = punctual(
+            entries=read_lines_from_file(args.entries_file),
+            usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [])
 
-    print(result)
+        print(result)
+
+        if args.live:
+            time.sleep(60)
+        else:
+            break
 
 
 if __name__ == "__main__":
