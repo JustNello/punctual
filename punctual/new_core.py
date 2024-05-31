@@ -21,6 +21,10 @@ ParsableEntryType = TypeVar('ParsableEntryType')
 class Parser(ABC, Generic[ParsableEntryType]):
 
     @abstractmethod
+    def is_parsable(self, entry: Generic[ParsableEntryType]) -> bool:
+        raise NotImplementedError("To be implemented in subclasses")
+
+    @abstractmethod
     def parse(self, entry: Generic[ParsableEntryType], **kwargs) -> Tuple[str, timedelta, Union[datetime, None]]:
         raise NotImplementedError("To be implemented in subclasses")
 
@@ -34,6 +38,9 @@ class StandardParser(Parser):
         for syn in synonyms:
             add_synonym_duration(syn[0], self._synonyms, syn[1])
         self._contingency = contingency if contingency else timedelta(minutes=2)
+
+    def is_parsable(self, entry: Generic[ParsableEntryType]) -> bool:
+        return not entry.startswith('#')
 
     def parse(self, entry: Generic[ParsableEntryType], **kwargs) -> Tuple[str, timedelta, Union[datetime, None]]:
         entry_name, at = parse_entry(entry, kwargs.get('start_time'))
@@ -81,7 +88,7 @@ class Schedule:
     def from_entries(cls, *entries: Generic[ParsableEntryType], parser: Parser[Generic[ParsableEntryType]]):
         result: Schedule = cls()
         i = 0
-        for entry in entries:
+        for entry in [e for e in entries if parser.is_parsable(e)]:
             name, duration, start = parser.parse(
                 entry,
                 # FIX-20240531: The StandardParser requires start_time to extrapolate
