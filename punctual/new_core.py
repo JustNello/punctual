@@ -165,7 +165,7 @@ class Schedule:
             previous_entry = self._entries[previous_entry_index]
         else:
             previous_entry = self.last
-        return start if start else previous_entry.end_time, previous_entry.end_time + duration
+        return start if start else previous_entry.end_time, (start if start else previous_entry.end_time) + duration
 
     def _make_entry(self, name: str, duration: timedelta, start: datetime = None,
                     previous_entry_index: int = None) -> Entry:
