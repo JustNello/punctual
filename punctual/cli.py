@@ -83,6 +83,7 @@ def main():
             usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [])
 
         print(result)
+        result.to_clipboard()
 
         if args.live:
             time.sleep(60)

@@ -1,3 +1,5 @@
+import pyperclip
+
 from abc import ABC, abstractmethod
 from datetime import datetime
 from datetime import timedelta
@@ -206,6 +208,11 @@ class Schedule:
         self._propagate_time_changes(index)
         self._sort()
         return result
+
+    # OTHER USER METHODS
+
+    def to_clipboard(self):
+        pyperclip.copy(self.__str__())
 
 
 def punctual(entries: List[str],
