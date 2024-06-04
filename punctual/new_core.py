@@ -1,21 +1,21 @@
-import pyperclip
-
 from abc import ABC, abstractmethod
 from datetime import datetime
 from datetime import timedelta
 from typing import Generic
 from typing import List
-from typing import Set
 from typing import NamedTuple
 from typing import Tuple
 from typing import TypeVar
 from typing import Union
-from enum import Enum
+
+import pyperclip
 
 from punctual.core import add_synonym_duration
-from punctual.core import prettify_report
-from punctual.core import parse_entry
 from punctual.core import get_duration
+from punctual.core import is_overlap
+from punctual.core import minutes_between_entries
+from punctual.core import parse_entry
+from punctual.core import prettify_report
 
 ParsableEntryType = TypeVar('ParsableEntryType')
 
@@ -50,11 +50,44 @@ class StandardParser(Parser):
         return entry_name, timedelta(minutes=entry_duration) + self._contingency, at
 
 
+class SignedTimedelta:
+
+    _POSITIVE = '+'
+    _NEGATIVE = '-'
+    _ZERO = '='
+
+    def __init__(self, sign: str, duration: timedelta):
+        self._sign = sign
+        self._duration = duration
+
+    @classmethod
+    def positive(cls, duration: timedelta) -> "SignedTimedelta":
+        return SignedTimedelta(cls._POSITIVE, duration)
+
+    @classmethod
+    def negative(cls, duration: timedelta) -> "SignedTimedelta":
+        return SignedTimedelta(cls._NEGATIVE, duration)
+
+    @classmethod
+    def zero(cls) -> "SignedTimedelta":
+        return SignedTimedelta(cls._ZERO, timedelta(days=0, hours=0, minutes=0))
+
+    @property
+    def is_zero(self) -> bool:
+        return self._sign == self._ZERO or self._duration.total_seconds() == 0
+
+    def __str__(self):
+        if self.is_zero:
+            return ''
+        return f'{self._sign} {self._duration}'
+
+
 class Entry(NamedTuple):
     name: str
     start_time: datetime
     end_time: datetime
     duration: timedelta
+    extra: SignedTimedelta
     fixed: bool
 
     @property
@@ -62,16 +95,10 @@ class Entry(NamedTuple):
         return self.duration.total_seconds() / 60
 
 
-class Feature(Enum):
-    DETECT_SPARE_TIME = 1
-    DETECT_OVERLAP = 2
-
-
 class Schedule:
 
-    def __init__(self, features: List[Feature] = None):
+    def __init__(self):
         self._entries: List[Entry] = []
-        self._features: Set[Entry] = set(features) if features else set()
 
     # CONSTRUCTORS
 
@@ -143,21 +170,21 @@ class Schedule:
     def end(self) -> datetime:
         return self.last.end_time
 
-    # TODO implement
-    @property
-    def _does_detect_overlap(self) -> bool:
-        return Feature.DETECT_OVERLAP in self._features
-
-    # TODO implement
-    @property
-    def _does_detect_spare_time(self) -> bool:
-        return Feature.DETECT_SPARE_TIME in self._features
-
     # PRIVATE METHODS
 
     def _raise_error_if_empty(self):
         if self.empty:
             raise IndexError("There are no entries")
+
+    def _previous_entry(self, previous_entry_index: int = None) -> Entry:
+        # Allows the user to insert an entry at a specified index,
+        # otherwise defaults to last entry
+        result: Entry
+        if previous_entry_index is not None:
+            result = self._entries[previous_entry_index]
+        else:
+            result = self.last
+        return result
 
     def _start_end_time(self, duration: timedelta, start: datetime = None, previous_entry_index: int = None) -> Tuple[
         datetime, datetime]:
@@ -169,18 +196,42 @@ class Schedule:
 
         # Allows the user to insert an entry at a specified index,
         # otherwise defaults to last entry
-        previous_entry: Entry
-        if previous_entry_index is not None:
-            previous_entry = self._entries[previous_entry_index]
+        return (start if start else self._previous_entry(previous_entry_index).end_time,
+                (start if start else self._previous_entry(previous_entry_index).end_time) + duration)
+
+    def _spare_time_or_overlap(self, duration: timedelta, start: datetime = None, previous_entry_index: int = None) -> SignedTimedelta:
+        start_time, end_time = self._start_end_time(
+            duration, start, previous_entry_index)
+
+        # detect overlap or spare time between this and previous entry
+        if self.empty:
+            result: SignedTimedelta = SignedTimedelta.zero()
         else:
-            previous_entry = self.last
-        return start if start else previous_entry.end_time, (start if start else previous_entry.end_time) + duration
+            overlap = is_overlap(
+                previous=self._previous_entry(previous_entry_index).end_time,
+                after=start_time)
+            minutes_between = timedelta(minutes=minutes_between_entries(
+                previous=self._previous_entry(previous_entry_index).end_time,
+                after=start_time))
+            result: SignedTimedelta = SignedTimedelta.negative(
+                minutes_between) if overlap else SignedTimedelta.positive(minutes_between)
+
+        return result
 
     def _make_entry(self, name: str, duration: timedelta, start: datetime = None,
                     previous_entry_index: int = None) -> Entry:
         start_time, end_time = self._start_end_time(
             duration, start, previous_entry_index)
-        return Entry(name, start_time, end_time, duration, True if start else False)
+
+        signed_timedelta = self._spare_time_or_overlap(
+            duration, start, previous_entry_index)
+
+        return Entry(name,
+                     start_time,
+                     end_time,
+                     duration,
+                     signed_timedelta,
+                     True if start else False)
 
     def _propagate_time_changes(self, index: int):
         already_up_to_date: List[Entry] = self._entries[:index]

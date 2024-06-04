@@ -130,13 +130,21 @@ def prettify_all_dates_in_dict(obj: dict, perform_copy: bool = True) -> dict:
     return result
 
 
-def prettify_report(report: dict) -> str:
+def prettify_report(report: dict, headers: List[str] = None) -> str:
     # TODO contribute to 'tabulate' library for custom formats of dates
     result = prettify_all_dates_in_dict(report)
+
+    if headers:
+        _entries = [headers] + [entry.values() for entry in result['entries']]
+        _headers = 'firstrow'
+    else:
+        _entries = result['entries']
+        _headers = 'keys'
+
     return f'''
 Total time required: {result['total_duration_minutes']} minutes
 From {result['start_time']} to {result['end_time']}
-{tabulate(result['entries'], headers='keys')}
+{tabulate(_entries, headers=_headers)}
 '''
 
 
