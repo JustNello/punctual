@@ -1,11 +1,8 @@
 import argparse
 import time
 
-from time import sleep
-
 from punctual.new_core import Schedule
 from punctual.new_core import punctual
-
 
 
 def parse_args():
@@ -30,6 +27,15 @@ def parse_args():
         '--live',
         action=argparse.BooleanOptionalAction,
         help='The program will continue running until the user shuts it down'
+    )
+
+    # Optional contingency: an amount in minutes that will be added
+    # to every entry
+    parser.add_argument(
+        '--contingency',
+        type=int,
+        help='An amount in minutes that will be added to every entry (default value is 2 minutes)',
+        default=2
     )
 
     args = parser.parse_args()
@@ -80,7 +86,9 @@ def main():
     while True:
         result: Schedule = punctual(
             entries=read_lines_from_file(args.entries_file),
-            usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [])
+            usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [],
+            contingency_in_minutes=args.contingency
+        )
 
         print(result)
         result.to_clipboard()
