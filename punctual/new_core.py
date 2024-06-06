@@ -95,7 +95,8 @@ class StandardParser(Parser):
         if is_direction(entry_name) and self.use_mapbox_for_directions:
             start_entry_name, _ = geocode(start_location(entry_name), self._profile.mapbox_token)
             end_entry_name, _ = geocode(end_location(entry_name), self._profile.mapbox_token)
-            return f'{start_entry_name} -> {end_entry_name}'
+            return (f'{start_entry_name}\n'
+                    f'{end_entry_name}')
 
         return entry_name
 

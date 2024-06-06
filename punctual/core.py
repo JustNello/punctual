@@ -154,7 +154,7 @@ def prettify_report(report: dict, headers: List[str] = None) -> str:
         _headers = 'keys'
 
     return f'''
-Total time required: {result['total_duration_minutes']} minutes
+Total time required: {round(result['total_duration_minutes'])} minutes
 From {result['start_time']} to {result['end_time']}
 {tabulate(_entries, headers=_headers)}
 '''
