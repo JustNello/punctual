@@ -1,4 +1,7 @@
+import os
+from json import loads
 from abc import ABC, abstractmethod
+from enum import Enum
 from datetime import datetime
 from datetime import timedelta
 from typing import Generic
@@ -16,6 +19,29 @@ from punctual.core import is_overlap
 from punctual.core import minutes_between_entries
 from punctual.core import parse_entry
 from punctual.core import prettify_report
+from punctual.core import is_direction
+from punctual.core import start_location
+from punctual.core import end_location
+from punctual._mapbox import geocode
+from punctual._mapbox import direction_duration
+from punctual._mapbox import RoutingProfile
+
+
+class Profile:
+
+    def __init__(self, file: str = None):
+        with open(file if file else os.environ.get('PUNCTUAL_PROFILE'), 'r') as f:
+            self._body = loads(f.read())
+
+    @property
+    def mapbox_token(self) -> str:
+        return self._body['mapbox']['token']
+
+
+class TripDurationProvider(Enum):
+    SYNONYMS = 1
+    MAPBOX = 2
+
 
 ParsableEntryType = TypeVar('ParsableEntryType')
 
@@ -33,25 +59,56 @@ class Parser(ABC, Generic[ParsableEntryType]):
 
 class StandardParser(Parser):
 
-    def __init__(self, synonyms: List[Tuple[str, int]], contingency: timedelta = None):
+    def __init__(self,
+                 synonyms: List[Tuple[str, int]],
+                 trip_duration_provider: TripDurationProvider = TripDurationProvider.SYNONYMS,
+                 contingency: timedelta = None):
         # the user can specify synonyms: they are like labels with a duration
         # so that the user can refer to a duration by its label (i.e. synonym)
         self._synonyms = {}
         for syn in synonyms:
             add_synonym_duration(syn[0], self._synonyms, syn[1])
         self._contingency = contingency if contingency else timedelta(minutes=2)
+        self._trip_duration_provider = trip_duration_provider
+        self._profile = Profile()
+
+    @property
+    def use_mapbox_for_directions(self) -> bool:
+        return self._trip_duration_provider is TripDurationProvider.MAPBOX
+
+    def get_duration(self, entry_name: str) -> timedelta:
+        # never fallback on synonyms for calculating the duration of a direction
+        if is_direction(entry_name) and self.use_mapbox_for_directions:
+            _, start_coord = geocode(start_location(entry_name), self._profile.mapbox_token)
+            _, end_coord = geocode(end_location(entry_name), self._profile.mapbox_token)
+            return direction_duration(
+                # TODO 1. allow user to specify a routing profile per entry
+                # TODO 2. allow user to specify a 'depart_at' time, as features by Mapbox API:
+                # TODO    https://docs.mapbox.com/playground/directions/?coordinates=12.42942%2C41.834776&coordinates=12.496166500000001%2C41.902633&steps=false&notifications=none&alternatives=false
+                [start_coord, end_coord], routing_profile=RoutingProfile.DRIVING, token=self._profile.mapbox_token)
+
+        return timedelta(minutes=get_duration(entry_name, self._synonyms))
+
+    def fix_entry_name(self, entry_name: str) -> str:
+        # When using Mapbox, we need to update the user's entered location with the actual matched location.
+        # This ensures the user can verify that Mapbox has provided the correct location.
+        if is_direction(entry_name) and self.use_mapbox_for_directions:
+            start_entry_name, _ = geocode(start_location(entry_name), self._profile.mapbox_token)
+            end_entry_name, _ = geocode(end_location(entry_name), self._profile.mapbox_token)
+            return f'{start_entry_name} -> {end_entry_name}'
+
+        return entry_name
 
     def is_parsable(self, entry: Generic[ParsableEntryType]) -> bool:
         return not entry.startswith('#')
 
     def parse(self, entry: Generic[ParsableEntryType], **kwargs) -> Tuple[str, timedelta, Union[datetime, None]]:
         entry_name, at = parse_entry(entry, kwargs.get('start_time'))
-        entry_duration = get_duration(entry_name, self._synonyms)
-        return entry_name, timedelta(minutes=entry_duration) + self._contingency, at
+        entry_duration = self.get_duration(entry_name)
+        return self.fix_entry_name(entry_name), entry_duration + self._contingency, at
 
 
 class SignedTimedelta:
-
     _POSITIVE = '+'
     _NEGATIVE = '-'
     _ZERO = '='
@@ -199,7 +256,8 @@ class Schedule:
         return (start if start else self._previous_entry(previous_entry_index).end_time,
                 (start if start else self._previous_entry(previous_entry_index).end_time) + duration)
 
-    def _spare_time_or_overlap(self, duration: timedelta, start: datetime = None, previous_entry_index: int = None) -> SignedTimedelta:
+    def _spare_time_or_overlap(self, duration: timedelta, start: datetime = None,
+                               previous_entry_index: int = None) -> SignedTimedelta:
         start_time, end_time = self._start_end_time(
             duration, start, previous_entry_index)
 
@@ -268,11 +326,14 @@ class Schedule:
 
 def punctual(entries: List[str],
              usr_synonyms: List[Tuple[str, int]],
-             usr_start_time: datetime = None,
+             trip_duration_provider: TripDurationProvider = TripDurationProvider.SYNONYMS,
              contingency_in_minutes: int = 2) -> Schedule:
     return Schedule.from_entries(
         *entries,
-        parser=StandardParser(synonyms=usr_synonyms, contingency=timedelta(minutes=contingency_in_minutes))
+        parser=StandardParser(
+            synonyms=usr_synonyms,
+            trip_duration_provider=trip_duration_provider,
+            contingency=timedelta(minutes=contingency_in_minutes))
     )
 
 
@@ -283,8 +344,10 @@ if __name__ == '__main__':
     ]
 
     schedule: Schedule = Schedule.from_entries(
-        '30m', 'shower; 14:00', 'snack',
-        parser=StandardParser(synonyms=usr_synonyms, contingency=None)
+        'Colosseo, Roma, Italia -> Piazza della Repubblica 00185, Roma RM', '30m', 'shower; 14:00', 'snack',
+        parser=StandardParser(synonyms=usr_synonyms,
+                              trip_duration_provider=TripDurationProvider.MAPBOX,
+                              contingency=None)
     )
 
     print(schedule)

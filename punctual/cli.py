@@ -3,6 +3,7 @@ import time
 
 from punctual.new_core import Schedule
 from punctual.new_core import punctual
+from punctual.new_core import TripDurationProvider
 
 
 def parse_args():
@@ -36,6 +37,13 @@ def parse_args():
         type=int,
         help='An amount in minutes that will be added to every entry (default value is 2 minutes)',
         default=2
+    )
+
+    # Calculate trips with Mapbox
+    parser.add_argument(
+        '--mapbox',
+        action=argparse.BooleanOptionalAction,
+        help='Duration of trips from a location to another will be calculated with Mapbox API'
     )
 
     args = parser.parse_args()
@@ -87,6 +95,7 @@ def main():
         result: Schedule = punctual(
             entries=read_lines_from_file(args.entries_file),
             usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [],
+            trip_duration_provider=TripDurationProvider.MAPBOX if args.mapbox else TripDurationProvider.SYNONYMS,
             contingency_in_minutes=args.contingency
         )
 

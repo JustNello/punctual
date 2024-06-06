@@ -9,7 +9,7 @@ from tabulate import tabulate
 
 # GLOBALS (they must not be visible outside this module)
 
-LOCATION_SYMBOL = ' -> '
+DIRECTION_SYMBOL = ' -> '
 ENTRY_DETAIL_SEPARATOR = ';'
 
 
@@ -20,22 +20,34 @@ def hello_world():
     return 'Hello world!'
 
 
-def is_location(entry: str) -> bool:
-    return LOCATION_SYMBOL in entry
+def is_direction(entry: str) -> bool:
+    return DIRECTION_SYMBOL in entry
 
 
 def is_synonym(entry: str, synonyms: dict) -> bool:
-    key = location_key(entry) if is_location(entry) else synonym_key(entry)
+    key = direction_key(entry) if is_direction(entry) else synonym_key(entry)
     return synonyms.get(key) is not None
 
 
-def location_key(entry: str) -> str:
-    if not is_location(entry):
-        raise ValueError('Expected an entry that represents a location')
-    locations = entry.lower().split(LOCATION_SYMBOL)
+def locations_in_direction(entry: str) -> List[str]:
+    if not is_direction(entry):
+        raise ValueError('Expected an entry that represents a direction, that is a trip from a location to another')
+    return entry.lower().split(DIRECTION_SYMBOL)
+
+
+def direction_key(entry: str) -> str:
+    locations = locations_in_direction(entry)
     locations.sort()
     # expected at max two locations
     return f'{locations[0]} - {locations[1]}'
+
+
+def start_location(entry: str) -> str:
+    return locations_in_direction(entry)[0]
+
+
+def end_location(entry: str) -> str:
+    return locations_in_direction(entry)[1]
 
 
 def synonym_key(entry: str) -> str:
@@ -43,12 +55,12 @@ def synonym_key(entry: str) -> str:
 
 
 def add_synonym_duration(entry: str, synonyms: dict, duration_in_minutes: int):
-    key = location_key(entry) if is_location(entry) else synonym_key(entry)
+    key = direction_key(entry) if is_direction(entry) else synonym_key(entry)
     synonyms[key] = {'duration': duration_in_minutes}
 
 
 def get_synonym_duration(entry: str, synonyms: dict) -> int:
-    key = location_key(entry) if is_location(entry) else synonym_key(entry)
+    key = direction_key(entry) if is_direction(entry) else synonym_key(entry)
     return synonyms[key]['duration']
 
 
