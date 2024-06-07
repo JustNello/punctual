@@ -4,12 +4,14 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from datetime import datetime
 from datetime import timedelta
-from typing import Generic, Any
+from typing import Generic
 from typing import List
 from typing import NamedTuple
 from typing import Tuple
 from typing import TypeVar
 from typing import Union
+from functools import cached_property
+from functools import lru_cache
 
 import pyperclip
 
@@ -25,6 +27,7 @@ from punctual.core import end_location
 from punctual._mapbox import geocode
 from punctual._mapbox import direction_duration
 from punctual._mapbox import RoutingProfile
+from punctual._openai import guess_duration
 
 
 class Profile:
@@ -36,6 +39,10 @@ class Profile:
     @property
     def mapbox_token(self) -> str:
         return self._body['mapbox']['token']
+
+    @property
+    def openai_token(self) -> str:
+        return self._body['openai']['token']
 
 
 class TripDurationProvider(Enum):
@@ -88,12 +95,39 @@ class MapboxParser(Parser):
         return self._fix_entry_name(entry_name), self._get_duration(entry_name), at
 
 
+class OpenAIGuessParser(Parser):
+
+    def __init__(self):
+        self._profile = Profile()
+
+    def is_parsable(self, entry: Generic[ParsableEntryType]) -> bool:
+        return not entry.startswith('#')
+
+    def parse(self, entry: Generic[ParsableEntryType], **kwargs) -> Tuple[str, timedelta, Union[datetime, None]]:
+        entry_name, at = parse_entry(entry, kwargs.get('start_time'))
+        return entry_name, guess_duration(entry_name, self._profile.openai_token), at
+
+
+class FallbackParser(Parser):
+
+    def __init__(self, synonyms: dict):
+        self._synonyms: dict = synonyms
+
+    def is_parsable(self, entry: Generic[ParsableEntryType]) -> bool:
+        entry_name, duration, at = self.parse(entry, start_time=datetime.now())
+        return not entry.startswith('#') and duration.total_seconds() > 0
+
+    def parse(self, entry: Generic[ParsableEntryType], **kwargs) -> Tuple[str, timedelta, Union[datetime, None]]:
+        entry_name, at = parse_entry(entry, kwargs.get('start_time'))
+        duration = timedelta(minutes=get_duration(entry_name, self._synonyms))
+        return entry_name, duration, at
+
+
 class StandardParser(Parser):
 
     def __init__(self,
                  synonyms: List[Tuple[str, int]],
                  trip_duration_provider: TripDurationProvider = TripDurationProvider.SYNONYMS,
-                 additional_parsers: List[Parser] = None,
                  contingency: timedelta = None):
         # the user can specify synonyms: they are like labels with a duration
         # so that the user can refer to a duration by its label (i.e. synonym)
@@ -102,14 +136,39 @@ class StandardParser(Parser):
             add_synonym_duration(syn[0], self._synonyms, syn[1])
         self._contingency = contingency if contingency else timedelta(minutes=2)
         self._trip_duration_provider = trip_duration_provider
-        # setup addition parsers
-        self._additional_parsers = None
-        self.with_addition_parsers(additional_parsers)
+        # this parser actually delegates the work to other parsers
+        self._additional_parsers: List[Parser] = []
+        # First, toggle only the default parser.
+        # The user can then call 'toggle_additional_parsers' again
+        # to enable the other available parsers as needed
+        self.toggle_online_parsers()
 
-    def with_addition_parsers(self, additional_parsers: List[Parser]):
-        self._additional_parsers: set[Parser] = set(additional_parsers) if additional_parsers else set()
-        if self._trip_duration_provider is TripDurationProvider.MAPBOX:
-            self._additional_parsers.add(MapboxParser())
+    @cached_property
+    def default_parser(self) -> Parser:
+        return FallbackParser(self._synonyms)
+
+    @cached_property
+    def mapbox_parser(self) -> Parser:
+        return MapboxParser()
+
+    @cached_property
+    def open_ai_guess_parser(self) -> Parser:
+        return OpenAIGuessParser()
+
+    def toggle_online_parsers(self):
+        if len(self._additional_parsers) == 1:
+            self._additional_parsers = [
+                self.mapbox_parser,
+                self.default_parser,
+                self.open_ai_guess_parser,
+            ]
+        else:
+            self._additional_parsers = []
+            # TODO deprecate the 'TripDurationProvider' settings and simplify the code
+            # TODO by removing this if condition
+            if self._trip_duration_provider is TripDurationProvider.MAPBOX:
+                self._additional_parsers.append(self.mapbox_parser)
+            self._additional_parsers.append(self.default_parser)
 
     def is_parsable(self, entry: Generic[ParsableEntryType]) -> bool:
         return not entry.startswith('#')
@@ -118,10 +177,11 @@ class StandardParser(Parser):
         parsers: List[Parser] = list(filter(lambda p: p.is_parsable(entry), self._additional_parsers))
         if len(parsers) > 0:
             entry_name, duration, at = parsers[0].parse(entry, **kwargs)
-        # fallback to default parsing strategy
+        # ideally there is at least one mathced parser
+        # but not always. Since we want to show the user a Schedule no matter
+        # what, let's fallback on the default parser
         else:
-            entry_name, at = parse_entry(entry, kwargs.get('start_time'))
-            duration = timedelta(minutes=get_duration(entry_name, self._synonyms))
+            entry_name, duration, at = self.default_parser.parse(entry, **kwargs)
         return entry_name, duration + self._contingency, at
 
 
@@ -343,15 +403,17 @@ class Schedule:
 
 def punctual(entries: List[str],
              usr_synonyms: List[Tuple[str, int]],
-             trip_duration_provider: TripDurationProvider = TripDurationProvider.SYNONYMS,
+             online: bool = False,
              contingency_in_minutes: int = 2) -> Schedule:
-    return Schedule.from_entries(
-        *entries,
-        parser=StandardParser(
+
+    standard_parser: StandardParser = StandardParser(
             synonyms=usr_synonyms,
-            trip_duration_provider=trip_duration_provider,
             contingency=timedelta(minutes=contingency_in_minutes))
-    )
+
+    if online:
+        standard_parser.toggle_online_parsers()
+
+    return Schedule.from_entries(*entries, parser=standard_parser)
 
 
 if __name__ == '__main__':
@@ -360,11 +422,14 @@ if __name__ == '__main__':
         ('snack', 10)
     ]
 
+    standard_parser: StandardParser = StandardParser(synonyms=usr_synonyms,
+                                                     contingency=None)
+    standard_parser.toggle_online_parsers()
+
+
     schedule: Schedule = Schedule.from_entries(
         'Colosseo, Roma, Italia -> Piazza della Repubblica 00185, Roma RM', '30m', 'shower; 14:00', 'snack',
-        parser=StandardParser(synonyms=usr_synonyms,
-                              trip_duration_provider=TripDurationProvider.MAPBOX,
-                              contingency=None)
+        parser=standard_parser
     )
 
     print(schedule)

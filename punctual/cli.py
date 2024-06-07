@@ -3,7 +3,6 @@ import time
 
 from punctual.new_core import Schedule
 from punctual.new_core import punctual
-from punctual.new_core import TripDurationProvider
 
 
 def parse_args():
@@ -39,11 +38,13 @@ def parse_args():
         default=2
     )
 
-    # Calculate trips with Mapbox
+    # Enhance the accuracy of duration calculations.
+    # Trip durations will be calculated using a geocoding service,
+    # while the durations of unknown entries will be estimated by an AI.
     parser.add_argument(
-        '--mapbox',
+        '--online',
         action=argparse.BooleanOptionalAction,
-        help='Duration of trips from a location to another will be calculated with Mapbox API'
+        help='Enhance your schedule with online tools. Trip durations will be calculated using a geocoding service, while the durations of unknown entries will be estimated by an AI'
     )
 
     args = parser.parse_args()
@@ -95,7 +96,7 @@ def main():
         result: Schedule = punctual(
             entries=read_lines_from_file(args.entries_file),
             usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [],
-            trip_duration_provider=TripDurationProvider.MAPBOX if args.mapbox else TripDurationProvider.SYNONYMS,
+            online=args.online,
             contingency_in_minutes=args.contingency
         )
 

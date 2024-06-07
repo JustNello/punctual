@@ -8,6 +8,7 @@ from punctual.new_core import Schedule
 from punctual.new_core import StandardParser
 from punctual.new_core import TripDurationProvider
 from punctual.new_core import MapboxParser
+from punctual.new_core import OpenAIGuessParser
 
 
 # FIXTURES
@@ -125,7 +126,7 @@ def test_parse_direction(standard_parser: StandardParser):
 
 def test_parse_direction_with_mapbox_geocoding(standard_parser: StandardParser):
     # given
-    standard_parser.with_addition_parsers([MapboxParser()])
+    standard_parser.toggle_online_parsers()
 
     # when
     name, duration, start = standard_parser.parse('Colosseo, Roma, Italia -> Piazza della Repubblica 00185, Roma RM')
@@ -134,4 +135,17 @@ def test_parse_direction_with_mapbox_geocoding(standard_parser: StandardParser):
     assert name == ('Colosseo, Piazza del Colosseo, Roma, Rome 00184, Italy\n'
                     'Piazza della Repubblica, Piazza della Repubblica, Roma, Rome 00185, Italy')
     assert 650 < duration.total_seconds() < 800
+    assert start is None
+
+
+def test_parse_unknown_entry_guessing_duration_with_openai(standard_parser: StandardParser):
+    # given
+    standard_parser.toggle_online_parsers()
+
+    # when
+    name, duration, start = standard_parser.parse('Having lunch with friends')
+
+    # then
+    assert name == 'Having lunch with friends'
+    assert duration == timedelta(seconds=1380)
     assert start is None
