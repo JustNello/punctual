@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from datetime import datetime
 from datetime import timedelta
-from typing import Generic
+from typing import Generic, Any
 from typing import List
 from typing import NamedTuple
 from typing import Tuple
@@ -57,11 +57,43 @@ class Parser(ABC, Generic[ParsableEntryType]):
         raise NotImplementedError("To be implemented in subclasses")
 
 
+class MapboxParser(Parser):
+
+    def __init__(self):
+        self._profile = Profile()
+
+    def _get_duration(self, entry_name: str) -> timedelta:
+        # never fallback on synonyms for calculating the duration of a direction
+        _, start_coord = geocode(start_location(entry_name), self._profile.mapbox_token)
+        _, end_coord = geocode(end_location(entry_name), self._profile.mapbox_token)
+        return direction_duration(
+            # TODO 1. allow user to specify a routing profile per entry
+            # TODO 2. allow user to specify a 'depart_at' time, as features by Mapbox API:
+            # TODO    https://docs.mapbox.com/playground/directions/?coordinates=12.42942%2C41.834776&coordinates=12.496166500000001%2C41.902633&steps=false&notifications=none&alternatives=false
+            [start_coord, end_coord], routing_profile=RoutingProfile.DRIVING, token=self._profile.mapbox_token)
+
+    def _fix_entry_name(self, entry_name: str) -> str:
+        # When using Mapbox, we need to update the user's entered location with the actual matched location.
+        # This ensures the user can verify that Mapbox has provided the correct location.
+        start_entry_name, _ = geocode(start_location(entry_name), self._profile.mapbox_token)
+        end_entry_name, _ = geocode(end_location(entry_name), self._profile.mapbox_token)
+        return (f'{start_entry_name}\n'
+                f'{end_entry_name}')
+
+    def is_parsable(self, entry: Generic[ParsableEntryType]) -> bool:
+        return not entry.startswith('#') and is_direction(entry)
+
+    def parse(self, entry: Generic[ParsableEntryType], **kwargs) -> Tuple[str, timedelta, Union[datetime, None]]:
+        entry_name, at = parse_entry(entry, kwargs.get('start_time'))
+        return self._fix_entry_name(entry_name), self._get_duration(entry_name), at
+
+
 class StandardParser(Parser):
 
     def __init__(self,
                  synonyms: List[Tuple[str, int]],
                  trip_duration_provider: TripDurationProvider = TripDurationProvider.SYNONYMS,
+                 additional_parsers: List[Parser] = None,
                  contingency: timedelta = None):
         # the user can specify synonyms: they are like labels with a duration
         # so that the user can refer to a duration by its label (i.e. synonym)
@@ -70,43 +102,27 @@ class StandardParser(Parser):
             add_synonym_duration(syn[0], self._synonyms, syn[1])
         self._contingency = contingency if contingency else timedelta(minutes=2)
         self._trip_duration_provider = trip_duration_provider
-        self._profile = Profile()
+        # setup addition parsers
+        self._additional_parsers = None
+        self.with_addition_parsers(additional_parsers)
 
-    @property
-    def use_mapbox_for_directions(self) -> bool:
-        return self._trip_duration_provider is TripDurationProvider.MAPBOX
-
-    def get_duration(self, entry_name: str) -> timedelta:
-        # never fallback on synonyms for calculating the duration of a direction
-        if is_direction(entry_name) and self.use_mapbox_for_directions:
-            _, start_coord = geocode(start_location(entry_name), self._profile.mapbox_token)
-            _, end_coord = geocode(end_location(entry_name), self._profile.mapbox_token)
-            return direction_duration(
-                # TODO 1. allow user to specify a routing profile per entry
-                # TODO 2. allow user to specify a 'depart_at' time, as features by Mapbox API:
-                # TODO    https://docs.mapbox.com/playground/directions/?coordinates=12.42942%2C41.834776&coordinates=12.496166500000001%2C41.902633&steps=false&notifications=none&alternatives=false
-                [start_coord, end_coord], routing_profile=RoutingProfile.DRIVING, token=self._profile.mapbox_token)
-
-        return timedelta(minutes=get_duration(entry_name, self._synonyms))
-
-    def fix_entry_name(self, entry_name: str) -> str:
-        # When using Mapbox, we need to update the user's entered location with the actual matched location.
-        # This ensures the user can verify that Mapbox has provided the correct location.
-        if is_direction(entry_name) and self.use_mapbox_for_directions:
-            start_entry_name, _ = geocode(start_location(entry_name), self._profile.mapbox_token)
-            end_entry_name, _ = geocode(end_location(entry_name), self._profile.mapbox_token)
-            return (f'{start_entry_name}\n'
-                    f'{end_entry_name}')
-
-        return entry_name
+    def with_addition_parsers(self, additional_parsers: List[Parser]):
+        self._additional_parsers: set[Parser] = set(additional_parsers) if additional_parsers else set()
+        if self._trip_duration_provider is TripDurationProvider.MAPBOX:
+            self._additional_parsers.add(MapboxParser())
 
     def is_parsable(self, entry: Generic[ParsableEntryType]) -> bool:
         return not entry.startswith('#')
 
     def parse(self, entry: Generic[ParsableEntryType], **kwargs) -> Tuple[str, timedelta, Union[datetime, None]]:
-        entry_name, at = parse_entry(entry, kwargs.get('start_time'))
-        entry_duration = self.get_duration(entry_name)
-        return self.fix_entry_name(entry_name), entry_duration + self._contingency, at
+        parsers: List[Parser] = list(filter(lambda p: p.is_parsable(entry), self._additional_parsers))
+        if len(parsers) > 0:
+            entry_name, duration, at = parsers[0].parse(entry, **kwargs)
+        # fallback to default parsing strategy
+        else:
+            entry_name, at = parse_entry(entry, kwargs.get('start_time'))
+            duration = timedelta(minutes=get_duration(entry_name, self._synonyms))
+        return entry_name, duration + self._contingency, at
 
 
 class SignedTimedelta:

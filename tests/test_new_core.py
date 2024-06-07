@@ -7,6 +7,7 @@ from punctual.new_core import punctual
 from punctual.new_core import Schedule
 from punctual.new_core import StandardParser
 from punctual.new_core import TripDurationProvider
+from punctual.new_core import MapboxParser
 
 
 # FIXTURES
@@ -51,12 +52,11 @@ def test_example_usage():
 
     # when
     result: Schedule = punctual(entries=usr_entries,
-                                usr_synonyms=usr_synonyms,
-                                usr_start_time=datetime(2024, 5, 23, 13, 29, 0))
+                                usr_synonyms=usr_synonyms)
 
     # then
     assert result.__str__() == ('\n'
-                                'Total time required: 299.0 minutes\n'
+                                'Total time required: 299 minutes\n'
                                 'From 17:02 to 22:35\n'
                                 'name                     start_time    end_time    duration    extra      '
                                 'fixed\n'
@@ -95,9 +95,7 @@ def test_insert_an_entry_to_existing_schedule_in_a_specific_position():
 
     # when
     result: Schedule = punctual(entries=usr_entries,
-                                usr_synonyms=usr_synonyms,
-                                usr_start_time=datetime(2024, 5, 23, 13, 29, 0))
-
+                                usr_synonyms=usr_synonyms)
 
     result.insert(1, 'breakfast', timedelta(minutes=12))
 
@@ -121,5 +119,19 @@ def test_parse_direction(standard_parser: StandardParser):
 
     # then
     assert name == 'Milan -> Rome'
-    assert duration == timedelta(seconds=21780) # 363 minutes
+    assert duration == timedelta(seconds=21780)  # 363 minutes
+    assert start is None
+
+
+def test_parse_direction_with_mapbox_geocoding(standard_parser: StandardParser):
+    # given
+    standard_parser.with_addition_parsers([MapboxParser()])
+
+    # when
+    name, duration, start = standard_parser.parse('Colosseo, Roma, Italia -> Piazza della Repubblica 00185, Roma RM')
+
+    # then
+    assert name == ('Colosseo, Piazza del Colosseo, Roma, Rome 00184, Italy\n'
+                    'Piazza della Repubblica, Piazza della Repubblica, Roma, Rome 00185, Italy')
+    assert 650 < duration.total_seconds() < 800
     assert start is None
