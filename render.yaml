@@ -1,0 +1,9 @@
+services:
+  - type: web
+    plan: free
+    name: punctual-streamlit-gui
+    runtime: python
+    repo: https://github.com/JustNello/punctual
+    branch: render
+    buildCommand: 'pip install -r requirements.txt && pip install .'
+    startCommand: 'python -m streamlit run .\punctual\gui.py'
