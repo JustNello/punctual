@@ -1,48 +1,63 @@
 import os
-from json import loads
 from abc import ABC, abstractmethod
-from enum import Enum
 from datetime import datetime
 from datetime import timedelta
+from enum import Enum
+from functools import cached_property
+from json import loads
 from typing import Generic
 from typing import List
 from typing import NamedTuple
 from typing import Tuple
 from typing import TypeVar
 from typing import Union
-from functools import cached_property
-from functools import lru_cache
 
 import pyperclip
 
+from punctual._mapbox import RoutingProfile
+from punctual._mapbox import direction_duration
+from punctual._mapbox import geocode
+from punctual._openai import guess_duration
+from punctual._utils import parse_environment_variable
 from punctual.core import add_synonym_duration
+from punctual.core import end_location
 from punctual.core import get_duration
+from punctual.core import is_direction
 from punctual.core import is_overlap
 from punctual.core import minutes_between_entries
 from punctual.core import parse_entry
 from punctual.core import prettify_report
-from punctual.core import is_direction
 from punctual.core import start_location
-from punctual.core import end_location
-from punctual._mapbox import geocode
-from punctual._mapbox import direction_duration
-from punctual._mapbox import RoutingProfile
-from punctual._openai import guess_duration
 
 
 class Profile:
+    _DEFAULT_FILE = './.punctual/profile.json'
 
     def __init__(self, file: str = None):
-        with open(file if file else os.environ.get('PUNCTUAL_PROFILE'), 'r') as f:
-            self._body = loads(f.read())
+        self._body = {}
+        if os.path.exists(self._DEFAULT_FILE):
+            self._body = self._load(self._DEFAULT_FILE)
+        elif os.environ.get('PUNCTUAL_PROFILE'):
+            self._body = self._load(os.environ.get('PUNCTUAL_PROFILE'))
+        else:
+            raise NotImplementedError(
+                'Cannot load any profile. Neither the ".punctual/profile.json" file or "PUNCTUAL_PROFILE" '
+                'environment variable were configured')
 
-    @property
+    @classmethod
+    def _load(cls, file) -> dict:
+        with open(file, 'r') as f:
+            return loads(f.read())
+
+    @cached_property
     def mapbox_token(self) -> str:
-        return self._body['mapbox']['token']
+        result = parse_environment_variable(self._body['mapbox']['token'])
+        return result if result else self._body['mapbox']['token']
 
-    @property
+    @cached_property
     def openai_token(self) -> str:
-        return self._body['openai']['token']
+        result = parse_environment_variable(self._body['openai']['token'])
+        return result if result else self._body['openai']['token']
 
 
 class TripDurationProvider(Enum):
@@ -405,10 +420,9 @@ def punctual(entries: List[str],
              usr_synonyms: List[Tuple[str, int]],
              online: bool = False,
              contingency_in_minutes: int = 2) -> Schedule:
-
     standard_parser: StandardParser = StandardParser(
-            synonyms=usr_synonyms,
-            contingency=timedelta(minutes=contingency_in_minutes))
+        synonyms=usr_synonyms,
+        contingency=timedelta(minutes=contingency_in_minutes))
 
     if online:
         standard_parser.toggle_online_parsers()
@@ -425,7 +439,6 @@ if __name__ == '__main__':
     standard_parser: StandardParser = StandardParser(synonyms=usr_synonyms,
                                                      contingency=None)
     standard_parser.toggle_online_parsers()
-
 
     schedule: Schedule = Schedule.from_entries(
         'Colosseo, Roma, Italia -> Piazza della Repubblica 00185, Roma RM', '30m', 'shower; 14:00', 'snack',

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "mapbox": {
+    "token": "${PUNCTUAL_MAPBOX_TOKEN}"
+  },
+  "openai": {
+    "token": "${PUNCTUAL_OPENAI_TOKEN}"
+  }
+}
