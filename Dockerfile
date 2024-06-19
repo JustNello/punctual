@@ -52,8 +52,5 @@ COPY . .
 # https://docs.docker.com/reference/dockerfile/#expose
 EXPOSE 8501
 
-ENV PUNCTUAL_MAPBOX_TOKEN='<USER_TOKEN>'
-ENV PUNCTUAL_OPENAI_TOKEN='<USER_TOKEN>'
-
 # Run the application.
 CMD python -m streamlit run ./punctual/gui.py
