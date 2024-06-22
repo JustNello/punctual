@@ -97,7 +97,8 @@ def main():
             entries=read_lines_from_file(args.entries_file),
             usr_synonyms=parse_synonyms_file(args.synonyms_file) if args.synonyms_file else [],
             online=args.online,
-            contingency_in_minutes=args.contingency
+            contingency_in_minutes=args.contingency,
+            tablefmt='simple_grid'
         )
 
         print(result)

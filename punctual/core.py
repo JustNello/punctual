@@ -1,6 +1,6 @@
 import re
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time, date
 from typing import List
 from typing import Tuple
 from typing import LiteralString
@@ -142,7 +142,7 @@ def prettify_all_dates_in_dict(obj: dict, perform_copy: bool = True) -> dict:
     return result
 
 
-def prettify_report(report: dict, headers: List[str] = None) -> str:
+def prettify_report(report: dict, headers: List[str] = None, tablefmt: str = None) -> str:
     # TODO contribute to 'tabulate' library for custom formats of dates
     result = prettify_all_dates_in_dict(report)
 
@@ -156,7 +156,7 @@ def prettify_report(report: dict, headers: List[str] = None) -> str:
     return f'''
 Total time required: {round(result['total_duration_minutes'])} minutes
 From {result['start_time']} to {result['end_time']}
-{tabulate(_entries, headers=_headers)}
+{tabulate(_entries, headers=_headers, tablefmt=tablefmt if tablefmt else 'default')}
 '''
 
 
@@ -165,8 +165,16 @@ def is_first_entry(user_output: dict) -> bool:
 
 
 def parse_at(at_as_string: str, start_time: datetime) -> datetime:
-    return datetime.combine(date=start_time.date(),
-                            time=datetime.strptime(at_as_string, '%H:%M').time())
+    date_info: date = start_time.date()
+    time_info: time = datetime.strptime(at_as_string, '%H:%M').time()
+    # 'start_time' represents the time of the previous entry (if any).
+    # The following condition checks if the current entry's time is earlier in the day
+    # than the previous entry's time, indicating that the current entry occurs on the
+    # following day
+    if time_info.hour < start_time.hour:
+        date_info = date_info + timedelta(days=1)
+    return datetime.combine(date=date_info,
+                            time=time_info)
 
 
 def parse_entry(parsable_entry: str, start_time: datetime):

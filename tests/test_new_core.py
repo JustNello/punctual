@@ -114,6 +114,16 @@ def test_parse_normal_synonym(standard_parser: StandardParser):
     assert start is None
 
 
+def test_parse_entry_for_next_day(standard_parser: StandardParser):
+    # when
+    name, duration, start = standard_parser.parse('Shower; 12:30', start_time=datetime(2024, 5, 23, 13, 29, 0))
+
+    # then
+    assert name == 'Shower'
+    assert duration == timedelta(seconds=1380)  # 23 minutes
+    assert '2024-05-24 12:30:00' == str(datetime(2024, 5, 24, 12, 30))
+
+
 def test_parse_direction(standard_parser: StandardParser):
     # when
     name, duration, start = standard_parser.parse('Milan -> Rome', start_time=datetime(2024, 5, 23, 13, 29, 0))

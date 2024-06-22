@@ -231,8 +231,9 @@ class Entry(NamedTuple):
 
 class Schedule:
 
-    def __init__(self):
+    def __init__(self, tablefmt: str = None):
         self._entries: List[Entry] = []
+        self._tablefmt = tablefmt
 
     # CONSTRUCTORS
 
@@ -248,8 +249,8 @@ class Schedule:
         return result
 
     @classmethod
-    def from_entries(cls, *entries: Generic[ParsableEntryType], parser: Parser[Generic[ParsableEntryType]]):
-        result: Schedule = cls()
+    def from_entries(cls, *entries: Generic[ParsableEntryType], parser: Parser[Generic[ParsableEntryType]], tablefmt: str = None):
+        result: Schedule = cls(tablefmt=tablefmt)
         i = 0
         for entry in [e for e in entries if parser.is_parsable(e)]:
             name, duration, start = parser.parse(
@@ -276,7 +277,7 @@ class Schedule:
         }
 
     def __str__(self):
-        return prettify_report(self.__dict__())
+        return prettify_report(self.__dict__(), tablefmt=self._tablefmt)
 
     @property
     def empty(self) -> bool:
@@ -404,7 +405,8 @@ class Schedule:
 def punctual(entries: List[str],
              usr_synonyms: List[Tuple[str, int]],
              online: bool = False,
-             contingency_in_minutes: int = 2) -> Schedule:
+             contingency_in_minutes: int = 2,
+             tablefmt: str = 'default') -> Schedule:
 
     standard_parser: StandardParser = StandardParser(
             synonyms=usr_synonyms,
@@ -413,7 +415,7 @@ def punctual(entries: List[str],
     if online:
         standard_parser.toggle_online_parsers()
 
-    return Schedule.from_entries(*entries, parser=standard_parser)
+    return Schedule.from_entries(*entries, parser=standard_parser, tablefmt=tablefmt)
 
 
 if __name__ == '__main__':
