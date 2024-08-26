@@ -1,0 +1,12 @@
+Grocery, 25
+Parking, 15
+Cooking, 12
+Meal, 12
+Clean, 10
+Breakfast, 10
+Lunch, 10
+Dinner, 10
+Shower, 20
+Shaving, 15
+Get dressed, 15
+Home -> Train Station, 60

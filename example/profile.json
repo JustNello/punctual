@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "mapbox": {
+    "token": "my-token-here"
+  },
+  "openai": {
+    "token": "my-token-here"
+  }
+}
